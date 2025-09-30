@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM pro Obchodníky</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- LeafletJS for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        .leaflet-container {
+            border-radius: 0.5rem;
+            height: 400px;
+            width: 100%;
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; /* slate-100 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* slate-300 */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; /* slate-400 */
+        }
+        #loading-indicator {
+            position: absolute;
+            inset: 0;
+            background-color: #f8fafc;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <!-- Main Container -->
+    <div class="flex flex-col md:flex-row min-h-screen">
+        
+        <!-- Sidebar with Filters -->
+        <aside class="w-full md:w-80 lg:w-96 bg-white border-r border-slate-200 p-6 flex-shrink-0">
+            <div class="sticky top-6">
+                <div class="flex items-center space-x-3 mb-8">
+                    <div class="bg-blue-600 text-white p-2 rounded-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users-round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-4-2"/></svg>
+                    </div>
+                    <h1 class="text-2xl font-bold text-slate-900">Firemní CRM</h1>
+                </div>
+                
+                <h2 class="text-lg font-semibold mb-4 text-slate-700">Filtrovat Klienty</h2>
+                
+                <!-- Search Input -->
+                <div class="mb-6">
+                    <label for="searchQuery" class="block text-sm font-medium text-slate-600 mb-2">Vyhledat firmu</label>
+                    <div class="relative">
+                        <input type="text" id="searchQuery" placeholder="Název firmy..." class="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                             <i data-lucide="search" class="w-5 h-5"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Category Filter -->
+                <div class="mb-6">
+                    <label for="categoryFilter" class="block text-sm font-medium text-slate-600 mb-2">Kategorie podniku</label>
+                    <select id="categoryFilter" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                        <option value="all">Všechny kategorie</option>
+                    </select>
+                </div>
+
+                <!-- Services Filter -->
+                <div>
+                    <h3 class="block text-sm font-medium text-slate-600 mb-3">Služby</h3>
+                    <div id="servicesFilter" class="space-y-2">
+                        <!-- Checkboxes will be inserted here by JS -->
+                    </div>
+                </div>
+
+                <div class="mt-8 border-t pt-4">
+                    <button id="resetFilters" class="w-full flex items-center justify-center gap-2 py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors">
+                        <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+                        Resetovat filtry
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 p-6 lg:p-8 overflow-y-auto relative">
+            <div id="loading-indicator" class="flex items-center justify-center h-full">
+                <div id="loading-content" class="text-center">
+                    <i data-lucide="loader-2" class="w-12 h-12 animate-spin text-blue-600 mx-auto"></i>
+                    <p class="mt-4 text-slate-500">Načítání klientských dat z Google Sheets...</p>
+                </div>
+            </div>
+            <div id="app-content" class="hidden">
+                <div id="dashboard-view">
+                    <h2 class="text-3xl font-bold text-slate-900 mb-2">Přehled</h2>
+                    <p class="text-slate-500 mb-8">Vítejte zpět! Zde je rychlý souhrn vašich aktivit.</p>
+
+                    <h3 class="text-xl font-semibold text-slate-800 mb-4">Noví Klienti</h3>
+                    <div id="new-clients-container" class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+                        <!-- New client cards will be inserted here -->
+                    </div>
+
+                    <div id="map-container">
+                        <h3 class="text-xl font-semibold text-slate-800 mb-4">Mapa Všech Klientů</h3>
+                        <div id="map" class="bg-slate-200"></div>
+                    </div>
+                </div>
+                
+                <div id="results-view" class="hidden">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-3xl font-bold text-slate-900">Výsledky Hledání</h2>
+                        <p id="results-count" class="text-slate-500 font-medium"></p>
+                    </div>
+                    <div id="clients-container" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+                        <!-- Filtered client cards will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Client Detail Modal -->
+    <div id="client-modal" class="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center p-4 z-50 hidden transition-opacity duration-300">
+        <div id="modal-content" class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform scale-95 transition-transform duration-300">
+            <!-- Modal content will be inserted here -->
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+
+            // --- KONFIGURACE ---
+            const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKN-JqGkH2b0dqI7-gHuDggTdi76W-7g-Q4eWlN2RMHjzMpYeG-PTO0r_GiAhm-ZnAxQeuN6nAmNt8/pub?output=csv';
+            const FETCH_TIMEOUT = 15000; // 15 sekund
+            
+            // Mapa služeb. Klíče jsou nyní malými písmeny pro odolnost vůči chybám.
+            const servicesMap = {
+                'linktour': { name: 'Google Street View virtuální prohlídka', icon: 'camera' },
+                'hasoptimization': { name: 'Optimalizace google moje firma', icon: 'settings-2' },
+                'hasmanagement': { name: 'Správa profilu google moje firma', icon: 'user-cog' },
+                'linkbanners': { name: 'reklamní příspěvky', icon: 'image' },
+                'linkproducts': { name: 'produktové portfolio', icon: 'shopping-cart' },
+                'linkdrone': { name: 'Záběry z Dronu', icon: 'send' },
+            };
+            
+            // --- GLOBÁLNÍ PROMĚNNÉ ---
+            let clientsData = [];
+            let map;
+
+            // --- ELEMENTY ---
+            const loadingContent = document.getElementById('loading-content');
+            const appContent = document.getElementById('app-content');
+            const clientsContainer = document.getElementById('clients-container');
+            const newClientsContainer = document.getElementById('new-clients-container');
+            const searchQuery = document.getElementById('searchQuery');
+            const categoryFilter = document.getElementById('categoryFilter');
+            const servicesFilterContainer = document.getElementById('servicesFilter');
+            const clientModal = document.getElementById('client-modal');
+            const modalContent = document.getElementById('modal-content');
+            const dashboardView = document.getElementById('dashboard-view');
+            const resultsView = document.getElementById('results-view');
+            const resultsCount = document.getElementById('results-count');
+            const resetFiltersBtn = document.getElementById('resetFilters');
+            const mapContainer = document.getElementById('map-container');
+
+
+            // --- FUNKCE ---
+
+            const showError = (title, message) => {
+                loadingContent.innerHTML = `<div class="text-center text-red-600">
+                    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto"></i>
+                    <p class="mt-4 font-semibold">${title}</p>
+                    <p class="text-sm text-slate-500 mt-2">${message}</p>
+                </div>`;
+                lucide.createIcons();
+            };
+
+            const fetchAndParseSheetData = async () => {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+
+                try {
+                    const response = await fetch(GOOGLE_SHEET_CSV_URL, { signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) throw new Error(`Chyba sítě: ${response.status} ${response.statusText}`);
+                    const csvText = await response.text();
+                    const lines = csvText.trim().split(/\r?\n/);
+                    if (lines.length < 2) throw new Error("Tabulka neobsahuje žádná data nebo je prázdná.");
+                    
+                    const rawHeaders = lines[0].split(',').map(h => h.trim());
+                    // Vylepšení: Všechny hlavičky převedeme na malá písmena pro snadné porovnání.
+                    const headers = rawHeaders.map(h => h.toLowerCase());
+                    console.log("NAČTENÁ (normalizovaná) HLAVIČKA:", headers);
+
+                    const requiredHeaders = ['id', 'name', 'category'];
+                    for (const h of requiredHeaders) {
+                        if (!headers.includes(h)) {
+                            throw new Error(`V tabulce chybí povinný sloupec: <strong>${h}</strong>. Zkontrolujte prosím názvy sloupců (na velikosti písmen nezáleží).`);
+                        }
+                    }
+
+                    const data = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        if (!lines[i].trim()) continue;
+                        const values = lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+                        const clientObj = {};
+                        // Vytvoříme objekt s malými písmeny v klíčích
+                        rawHeaders.forEach((header, index) => {
+                            let value = (values[index] || '').trim();
+                            if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+                            clientObj[header.toLowerCase()] = value;
+                        });
+                        
+                        const id = parseInt(clientObj.id, 10);
+                        if (isNaN(id)) continue;
+
+                        const clientData = {
+                            id: id,
+                            name: clientObj.name || 'Neuvedeno',
+                            category: clientObj.category || 'Neuvedeno',
+                            isNew: (clientObj.isnew || '').toLowerCase() === 'true',
+                            activeServices: [],
+                        };
+                        
+                        // Dynamicky přiřadí všechny ostatní sloupce
+                        Object.keys(clientObj).forEach(key => {
+                            if (!clientData.hasOwnProperty(key)) {
+                                clientData[key] = clientObj[key];
+                            }
+                        });
+
+                        // Dynamicky vytvoří seznam aktivních služeb
+                        Object.keys(servicesMap).forEach(serviceKey => {
+                            const serviceValue = clientData[serviceKey];
+                            if (serviceValue && serviceValue.toLowerCase() !== 'false') {
+                                clientData.activeServices.push(servicesMap[serviceKey].name);
+                            }
+                        });
+
+                        data.push(clientData);
+                    }
+                    return data;
+
+                } catch (error) {
+                    console.error("Detail chyby při načítání:", error);
+                    if (error.name === 'AbortError') {
+                        showError("Načítání dat trvá příliš dlouho.", "Zkontrolujte své internetové připojení a zda je tabulka správně publikována.");
+                    } else {
+                        showError("Nepodařilo se načíst data.", error.message || "Zkontrolujte URL adresu, publikační nastavení tabulky a názvy sloupců.");
+                    }
+                    return [];
+                }
+            };
+
+            const createClientCard = (client) => {
+                return `
+                    <div class="bg-white border border-slate-200 rounded-xl p-5 cursor-pointer hover:shadow-lg hover:border-blue-500 transition-all duration-300 transform hover:-translate-y-1" data-client-id="${client.id}">
+                        <div class="flex items-start justify-between">
+                            <h3 class="text-lg font-bold text-slate-900 mb-1">${client.name}</h3>
+                            ${client.isNew ? '<span class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full">Nový</span>' : ''}
+                        </div>
+                        <p class="text-sm text-slate-500 mb-4">${client.category}</p>
+                        ${client.address ? `
+                        <div class="flex items-center text-sm text-slate-600">
+                            <i data-lucide="map-pin" class="w-4 h-4 mr-2 text-slate-400"></i>
+                            <span>${client.address}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+            };
+            
+            const renderClients = (clients) => {
+                clientsContainer.innerHTML = clients.map(createClientCard).join('');
+                resultsCount.textContent = `${clients.length} ${clients.length === 1 ? 'klient' : (clients.length >=2 && clients.length <=4 ? 'klienti' : 'klientů')} nalezeno`;
+                lucide.createIcons();
+            };
+
+            const populateFilters = () => {
+                const categories = [...new Set(clientsData.map(c => c.category))].filter(Boolean);
+                categories.sort().forEach(category => {
+                    const option = document.createElement('option');
+                    option.value = category;
+                    option.textContent = category;
+                    categoryFilter.appendChild(option);
+                });
+
+                Object.values(servicesMap).forEach(service => {
+                    const serviceId = service.name.replace(/\s+/g, '-');
+                    const checkboxDiv = document.createElement('div');
+                    checkboxDiv.className = 'flex items-center';
+                    checkboxDiv.innerHTML = `
+                        <input id="service-${serviceId}" type="checkbox" value="${service.name}" class="service-checkbox h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <label for="service-${serviceId}" class="ml-2 block text-sm text-slate-700">${service.name}</label>
+                    `;
+                    servicesFilterContainer.appendChild(checkboxDiv);
+                });
+            };
+            
+            const applyFilters = () => {
+                const query = searchQuery.value.toLowerCase();
+                const category = categoryFilter.value;
+                const selectedServices = Array.from(document.querySelectorAll('.service-checkbox:checked')).map(cb => cb.value);
+
+                const filteredClients = clientsData.filter(client => {
+                    const nameMatch = client.name.toLowerCase().includes(query);
+                    const categoryMatch = category === 'all' || client.category === category;
+                    const servicesMatch = selectedServices.every(service => client.activeServices.includes(service));
+                    
+                    return nameMatch && categoryMatch && servicesMatch;
+                });
+
+                if (query || category !== 'all' || selectedServices.length > 0) {
+                    dashboardView.classList.add('hidden');
+                    resultsView.classList.remove('hidden');
+                    renderClients(filteredClients);
+                } else {
+                    resultsView.classList.add('hidden');
+                    dashboardView.classList.remove('hidden');
+                }
+            };
+            
+            const showClientModal = (clientId) => {
+                const client = clientsData.find(c => c.id == clientId);
+                if (!client) return;
+
+                const allLinks = [
+                    { key: 'linktour', name: 'Virtuální Prohlídka', icon: 'camera' },
+                    { key: 'linkdrone', name: 'Záběry z Dronu', icon: 'send' },
+                    { key: 'linkbanners', name: 'Bannery', icon: 'image' },
+                    { key: 'linkproducts', name: 'Produkty', icon: 'shopping-cart' },
+                ];
+                
+                const availableLinks = allLinks.filter(link => client[link.key]);
+
+                modalContent.innerHTML = `
+                    <div class="p-8">
+                        <div class="flex justify-between items-start">
+                             <div>
+                                <h2 class="text-3xl font-bold text-slate-900">${client.name}</h2>
+                                <p class="text-slate-500 mt-1">${client.category}</p>
+                                ${client['place id'] ? `<p class="text-xs text-slate-400 mt-2 font-mono">Place ID: ${client['place id']}</p>` : ''}
+                            </div>
+                            <button id="close-modal" class="text-slate-400 hover:text-slate-600 transition-colors">
+                                <i data-lucide="x" class="w-8 h-8"></i>
+                            </button>
+                        </div>
+                        <div class="mt-8">
+                            <h3 class="text-lg font-semibold text-slate-800 mb-4">Aktivní Služby</h3>
+                            <ul class="space-y-3">
+                                ${Object.values(servicesMap).map(service => {
+                                    const isActive = client.activeServices.includes(service.name);
+                                    return `
+                                    <li class="flex items-center">
+                                        <div class="w-6 h-6 rounded-full flex items-center justify-center mr-3 ${isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}">
+                                            <i data-lucide="${isActive ? 'check' : 'minus'}" class="w-4 h-4"></i>
+                                        </div>
+                                        <span class="${isActive ? 'text-slate-700' : 'text-slate-400 line-through'}">${service.name}</span>
+                                    </li>
+                                `}).join('')}
+                            </ul>
+                        </div>
+
+                        ${(client.gmbsearch || client.gbmmaps) ? `
+                        <div class="mt-8 border-t border-slate-200 pt-6">
+                            <h3 class="text-lg font-semibold text-slate-800 mb-4">Odkazy na Google Profil</h3>
+                            <div class="flex flex-col sm:flex-row gap-4">
+                                ${client.gmbsearch ? `
+                                <a href="${client.gmbsearch}" target="_blank" class="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors">
+                                    <i data-lucide="search" class="w-5 h-5"></i>
+                                    Zobrazit ve Vyhledávači
+                                </a>` : ''}
+                                ${client.gbmmaps ? `
+                                <a href="${client.gbmmaps}" target="_blank" class="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
+                                    <i data-lucide="map" class="w-5 h-5"></i>
+                                    Zobrazit v Mapách
+                                </a>` : ''}
+                            </div>
+                        </div>` : ''}
+
+                        ${availableLinks.length > 0 ? `
+                        <div class="mt-8 border-t border-slate-200 pt-6">
+                            <h3 class="text-lg font-semibold text-slate-800 mb-4">Další zdroje</h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                ${availableLinks.map(link => `
+                                <a href="${client[link.key]}" target="_blank" class="flex items-center justify-center gap-2 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors">
+                                    <i data-lucide="${link.icon}" class="w-5 h-5"></i> ${link.name}
+                                </a>`).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+                lucide.createIcons();
+                clientModal.classList.remove('hidden');
+                setTimeout(() => {
+                    clientModal.classList.add('opacity-100');
+                    modalContent.classList.remove('scale-95');
+                    modalContent.classList.add('scale-100');
+                }, 10);
+                document.getElementById('close-modal').addEventListener('click', hideClientModal);
+            };
+
+            const hideClientModal = () => {
+                clientModal.classList.remove('opacity-100');
+                modalContent.classList.remove('scale-100');
+                modalContent.classList.add('scale-95');
+                setTimeout(() => clientModal.classList.add('hidden'), 300);
+            };
+
+            const setupDashboard = () => {
+                const newClients = clientsData.filter(c => c.isNew).slice(0, 3);
+                newClientsContainer.innerHTML = newClients.map(createClientCard).join('');
+                
+                const clientsWithLocation = clientsData.filter(c => c.lat && c.lng);
+                if (clientsWithLocation.length > 0) {
+                    mapContainer.style.display = 'block';
+                    if (document.getElementById('map')._leaflet_id) map.remove();
+                    map = L.map('map').setView([49.8175, 15.4729], 7);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    }).addTo(map);
+                    clientsWithLocation.forEach(client => {
+                        L.marker([parseFloat(client.lat), parseFloat(client.lng)])
+                            .addTo(map)
+                            .bindPopup(`<b>${client.name}</b>${client.address ? `<br>${client.address}` : ''}`);
+                    });
+                } else {
+                     mapContainer.style.display = 'none';
+                }
+            };
+
+            const resetFilters = () => {
+                searchQuery.value = '';
+                categoryFilter.value = 'all';
+                document.querySelectorAll('.service-checkbox:checked').forEach(cb => cb.checked = false);
+                applyFilters();
+            }
+            
+            const setupEventListeners = () => {
+                searchQuery.addEventListener('input', applyFilters);
+                categoryFilter.addEventListener('change', applyFilters);
+                servicesFilterContainer.addEventListener('change', (e) => e.target.classList.contains('service-checkbox') && applyFilters());
+                document.body.addEventListener('click', (e) => {
+                    const card = e.target.closest('[data-client-id]');
+                    if (card) showClientModal(card.dataset.clientId);
+                });
+                clientModal.addEventListener('click', (e) => e.target === clientModal && hideClientModal());
+                resetFiltersBtn.addEventListener('click', resetFilters);
+            }
+
+            // --- INICIALIZACE APLIKACE ---
+            clientsData = await fetchAndParseSheetData();
+            if (clientsData.length > 0) {
+                document.getElementById('loading-indicator').classList.add('hidden');
+                appContent.classList.remove('hidden');
+                
+                populateFilters();
+                setupDashboard();
+                setupEventListeners();
+            }
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
+
