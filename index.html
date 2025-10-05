@@ -25,13 +25,11 @@
             background-color: #eef2ff; /* indigo-50 */
             color: #4338ca; /* indigo-700 */
         }
-        #filter-panel { transition: max-height 0.3s ease-out, padding 0.3s ease-out, margin 0.3s ease-out; }
-        .service-module {
-            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-        }
-        .service-module-active:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        #filter-panel { transition: max-height 0.3s ease-in-out, margin-bottom 0.3s ease-in-out; }
+        .status-icon-group:hover .status-icon-tooltip {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
         }
         #toast-notification {
             transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
@@ -104,9 +102,9 @@
                         </div>
                     </div>
                     <!-- Filter Panel -->
-                    <div id="filter-panel" class="bg-white rounded-2xl shadow-sm max-h-0 overflow-hidden" style="padding-top: 0; padding-bottom: 0; margin-bottom: 0px;">
+                    <div id="filter-panel" class="bg-white rounded-2xl shadow-sm max-h-0 overflow-hidden">
                         <div class="p-6">
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
                                     <label for="searchQuery" class="block text-sm font-medium text-slate-600 mb-2">Vyhledat firmu</label>
                                     <input type="text" id="searchQuery" placeholder="Název firmy..." class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition">
@@ -115,7 +113,7 @@
                                     <label for="categoryFilter" class="block text-sm font-medium text-slate-600 mb-2">Kategorie</label>
                                     <select id="categoryFilter" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition"><option value="all">Všechny kategorie</option></select>
                                 </div>
-                                <div class="md:col-span-3">
+                                <div class="md:col-span-2">
                                     <h3 class="block text-sm font-medium text-slate-600 mb-3">Služby</h3>
                                     <div id="servicesFilter" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-y-3 gap-x-6"></div>
                                 </div>
@@ -128,7 +126,7 @@
                         </div>
                     </div>
                     
-                    <div id="clients-container" class="grid grid-cols-1 lg:grid-cols-2 gap-6"></div>
+                    <div id="clients-container" class="space-y-3"></div>
                     <div id="empty-state" class="hidden text-center py-20"></div>
                 </div>
             </div>
@@ -136,9 +134,9 @@
     </div>
 
     <!-- Toast Notification -->
-    <div id="toast-notification" class="fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-lg flex items-center gap-3 opacity-0 translate-y-4">
+    <div id="toast-notification" class="fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-lg flex items-center gap-3 opacity-0 translate-y-4 z-50">
         <i data-lucide="check-circle" class="w-5 h-5"></i>
-        <span class="font-semibold">Data byla úspěšně aktualizována!</span>
+        <span id="toast-message" class="font-semibold"></span>
     </div>
 
     <!-- Skeleton Loader Structure -->
@@ -147,48 +145,88 @@
     <script>
     document.addEventListener('DOMContentLoaded', async () => {
         // --- CONFIG ---
-        const CLIENTS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKN-JqGkH2b0dqI7-gHuDggTdi76W-7g-Q4eWlN2RMHjzMpYeG-PTO0r_GiAhm-ZnAxQeuN6nAmNt8/pub?output=csv';
+        const CLIENTS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKN-JqGkH2b0dqI7-gHuDggTdi76W-7g-Q4eWlN2RMHjzMpYeG-PTO0r_GiAhm-ZnAxQeuN6nAmNt8/pub?gid=0&single=true&output=csv';
         const STATS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKN-JqGkH2b0dqI7-gHuDggTdi76W-7g-Q4eWlN2RMHjzMpYeG-PTO0r_GiAhm-ZnAxQeuN6nAmNt8/pub?gid=1290897837&single=true&output=csv';
+
         const FETCH_TIMEOUT = 15000;
+        const sectionMap = {
+            gsv: { title: 'Google Street View', keys: ['linktour', 'linkdrone'] },
+            gmf: { title: 'Google Moje Firma', keys: ['hasoptimization', 'hasmanagement', 'linkproducts', 'linkbanners'] },
+            other: { title: 'Další služby', keys: ['linkapp', 'linknfc'] }
+        };
         const servicesMap = {
-            'linktour': { name: 'Virtuální prohlídka', icon: 'camera' },
-            'linkdrone': { name: 'Záběry z dronu', icon: 'drone' },
-            'linkbanners': { name: 'Reklamní příspěvky', icon: 'image' },
-            'linkproducts': { name: 'Produktové portfolio', icon: 'shopping-cart' },
-            'hasoptimization': { name: 'Optimalizace GMF', icon: 'trending-up' },
-            'hasmanagement': { name: 'Správa profilu GMF', icon: 'user-cog' },
-            'linknfc': { name: 'NFC', icon: 'wifi' },
-            'linkapp': { name: 'Aplikace', icon: 'smartphone' }
+            'linktour': { name: 'Virtuální prohlídka', icon: 'camera' }, 'linkdrone': { name: 'Dron', icon: 'drone' }, 'hasoptimization': { name: 'Optimalizace', icon: 'trending-up' }, 'hasmanagement': { name: 'Správa', icon: 'user-cog' }, 'linkproducts': { name: 'Produkty', icon: 'shopping-cart' }, 'linkbanners': { name: 'Příspěvky', icon: 'image' }, 'linkapp': { name: 'Aplikace', icon: 'smartphone' }, 'linknfc': { name: 'NFC', icon: 'wifi' }
+        };
+        const otherLinksMap = {
+            'gmbsearch': { name: 'Profil ve Vyhledávači', icon: 'search' },
+            'gmbmaps': { name: 'Profil v Mapách', icon: 'map' },
+            'linkstatisticgmf': { name: 'Statistiky GMF', icon: 'store' },
+            'linkstatisticvirtual': { name: 'Statistiky Prohlídek', icon: 'route' },
         };
         // --- STATE ---
         let clientsData = [], statsData = {}, filteredClients = [];
         // --- ELEMENTS ---
         const el = {
-            navLinks: document.querySelectorAll('.nav-link'), views: { dashboard: document.getElementById('dashboard-view'), clients: document.getElementById('clients-view') }, dashboardContent: document.getElementById('dashboard-content'), statsContainer: document.getElementById('stats-container'), clientsContainer: document.getElementById('clients-container'), emptyState: document.getElementById('empty-state'), skeletonLoader: document.getElementById('skeleton-loader'), reloadDataBtn: document.getElementById('reloadDataBtn'), toggleFiltersBtn: document.getElementById('toggle-filters-btn'), filterPanel: document.getElementById('filter-panel'), filterCount: document.getElementById('filter-count'), searchQuery: document.getElementById('searchQuery'), categoryFilter: document.getElementById('categoryFilter'), servicesFilterContainer: document.getElementById('servicesFilter'),
+            navLinks: document.querySelectorAll('.nav-link'), views: { dashboard: document.getElementById('dashboard-view'), clients: document.getElementById('clients-view') }, dashboardContent: document.getElementById('dashboard-content'), statsContainer: document.getElementById('stats-container'), clientsContainer: document.getElementById('clients-container'), emptyState: document.getElementById('empty-state'), skeletonLoader: document.getElementById('skeleton-loader'), reloadDataBtn: document.getElementById('reloadDataBtn'), toggleFiltersBtn: document.getElementById('toggle-filters-btn'), filterPanel: document.getElementById('filter-panel'), filterCount: document.getElementById('filter-count'), searchQuery: document.getElementById('searchQuery'), categoryFilter: document.getElementById('categoryFilter'), locationFilter: document.getElementById('locationFilter'), servicesFilterContainer: document.getElementById('servicesFilter'),
             recentClientsContainer: document.getElementById('recent-clients-container'),
             resetFiltersBtn: document.getElementById('resetFiltersBtn'),
             toast: document.getElementById('toast-notification'),
+            toastMessage: document.getElementById('toast-message'),
         };
         let topCategoriesChart = null;
 
+        // --- HELPERS ---
+        const debounce = (func, delay) => {
+            let timeoutId;
+            return (...args) => {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => {
+                    func.apply(this, args);
+                }, delay);
+            };
+        };
+
         // --- FETCH & PARSE ---
+        const parseCSVLine = (line) => {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    if (inQuotes && line[i+1] === '"') {
+                        current += '"'; i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current); current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current);
+            return result;
+        };
+
         const fetchAndParseSheetData = async (url, isStats = false, forceRefresh = false) => {
+             if (!url || url.startsWith('SEM_VLOZTE')) { return isStats ? {} : []; }
             let fetchUrl = url;
             if (forceRefresh) {
-                // Correct cache-busting
                 fetchUrl += (url.includes('?') ? '&' : '?') + '_=' + new Date().getTime();
             }
             try {
                 const response = await fetch(fetchUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT) });
-                if (!response.ok) throw new Error(`Network error`);
-                const lines = (await response.text()).trim().split(/\r?\n/);
+                if (!response.ok) throw new Error(`Network error: ${response.statusText}`);
+                const csvText = await response.text();
+                const lines = csvText.trim().split(/\r?\n/);
                 if (lines.length < 2) return isStats ? {} : [];
-
-                const rawHeaders = lines[0].split(',').map(h => h.trim().toLowerCase());
+                const rawHeaders = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/\s+/g, ''));
+                
                 const data = lines.slice(1).map(line => {
-                    const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+                    const values = parseCSVLine(line);
                     const obj = {};
-                    rawHeaders.forEach((h, i) => obj[h] = (values[i] || '').trim().replace(/^"|"$/g, ''));
+                    rawHeaders.forEach((h, i) => obj[h] = (values[i] || '').trim());
                     return obj;
                 }).filter(Boolean);
 
@@ -198,13 +236,12 @@
                         return acc;
                     }, {});
                 }
-
-                if (!['id', 'name', 'category'].every(h => rawHeaders.includes(h))) throw new Error(`Missing required columns.`);
+                if (!['id', 'name', 'category'].every(h => rawHeaders.includes(h))) throw new Error(`Chybí povinné sloupce (id, name, category).`);
+                
                 return data.map(clientObj => {
                     const id = parseInt(clientObj.id, 10); if (isNaN(id)) return null;
                     const clientData = { id, name: clientObj.name || 'N/A', category: clientObj.category || 'N/A', isNew: (clientObj.isnew || '').toLowerCase() === 'true' };
                     Object.assign(clientData, clientObj);
-                    clientData.activeServices = Object.keys(servicesMap).filter(k => clientData[k] && clientData[k].toLowerCase() !== 'false' && clientData[k].trim() !== '');
                     return clientData;
                 }).filter(Boolean);
 
@@ -212,94 +249,59 @@
         };
 
         // --- RENDER ---
-        const createModule = (options) => {
-            const { client, key, name, icon, type = 'service', linkKey } = options;
-            const hasService = client[key] && client[key].toLowerCase() !== 'false' && client[key].trim() !== '';
-            const link = linkKey ? client[linkKey] : client[key];
-            const isClickable = hasService && link && (link.startsWith('http') || type === 'stat');
+        const createStatusIcon = (client, key, name, icon) => {
+            const value = client[key];
+            const isActive = value && value.toLowerCase() !== 'false' && value.trim() !== '';
             
-            const statusIndicator = `
-                <div class="absolute top-1.5 right-1.5 flex items-center gap-1 text-xs font-bold ${hasService ? 'text-green-600' : 'text-red-600'}">
-                    <div class="w-1.5 h-1.5 rounded-full ${hasService ? 'bg-green-500' : 'bg-red-500'}"></div>
-                </div>
-            `;
-            
-            let content;
-            if (type === 'stat') {
-                content = `
-                    <p class="text-xl font-bold text-slate-800">${hasService ? formatNumber(client[key]) : '-'}</p>
-                    <p class="text-xs font-medium text-slate-500 mt-1 flex items-center gap-1.5"><i data-lucide="${icon}" class="w-3 h-3"></i> ${name}</p>
-                `;
-            } else {
-                 content = `
-                    <i data-lucide="${icon}" class="w-6 h-6 ${hasService ? 'text-indigo-600' : 'text-slate-400'}"></i>
-                    <p class="mt-2 text-xs font-semibold text-center ${hasService ? 'text-slate-700' : 'text-slate-500'}">${name}</p>
-                `;
+            let linkValue = value;
+            if (isActive && linkValue && !linkValue.startsWith('http')) {
+                linkValue = 'https://' + linkValue;
             }
+            const isClickable = isActive && linkValue;
 
-            const wrapperClasses = `relative flex flex-col items-center justify-center p-3 rounded-xl text-center service-module ${hasService ? 'bg-white shadow-sm' : 'bg-slate-100'}`;
-
+            const iconEl = `<div class="relative status-icon-group"><i data-lucide="${icon}" class="w-5 h-5 ${isActive ? 'text-slate-600' : 'text-slate-400'}"></i><div class="absolute -top-1 -right-1 w-2 h-2 rounded-full border border-white ${isActive ? 'bg-green-500' : 'bg-red-500'}"></div><div class="status-icon-tooltip absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max bg-slate-800 text-white text-xs rounded py-1 px-2 shadow-lg opacity-0 visibility-hidden transition-all duration-200 transform-gpu translate-y-1 z-10">${name}</div></div>`;
+            
             if (isClickable) {
-                return `<a href="${link}" target="_blank" class="${wrapperClasses} service-module-active">${statusIndicator}${content}</a>`;
+                return `<a href="${linkValue}" target="_blank" class="transition-transform hover:scale-110">${iconEl}</a>`;
             } else {
-                return `<div class="${wrapperClasses} ${!hasService ? 'cursor-not-allowed' : ''}">${statusIndicator}${content}</div>`;
+                return `<div class="cursor-default">${iconEl}</div>`;
             }
         };
 
-
         const createClientCard = (client) => {
-            return `
-                <div class="bg-white p-5 rounded-2xl shadow-sm">
-                    <div class="flex justify-between items-start mb-4">
-                        <div>
-                            <h3 class="text-lg font-bold text-slate-900">${client.name}</h3>
-                            <p class="text-sm text-slate-500 font-medium">${client.category}</p>
-                        </div>
-                        ${client.isNew ? '<span class="text-xs font-bold text-green-700 bg-green-100 px-3 py-1 rounded-full">NOVÝ</span>' : ''}
-                    </div>
-                    
-                    <div class="space-y-3">
-                        <div>
-                            <h4 class="text-sm font-semibold text-slate-600 mb-2">Služby</h4>
-                            <div class="grid grid-cols-4 gap-2">
-                                ${Object.entries(servicesMap).map(([key, service]) => createModule({client, key, name: service.name, icon: service.icon})).join('')}
-                            </div>
-                        </div>
-                        <div>
-                            <h4 class="text-sm font-semibold text-slate-600 mb-2">Vyhledávání</h4>
-                            <div class="grid grid-cols-2 gap-2">
-                                ${createModule({client, key: 'gmbsearch', name: 'Profil ve Vyhledávači', icon: 'search'})}
-                                ${createModule({client, key: 'gmbmaps', name: 'Profil v Mapách', icon: 'map'})}
-                            </div>
-                        </div>
-                        <div>
-                            <h4 class="text-sm font-semibold text-slate-600 mb-2">Statistiky</h4>
-                            <div class="grid grid-cols-2 gap-2">
-                                ${createModule({client, key: 'statisticgmf', name: 'Google Moje Firma', icon: 'store', type: 'stat', linkKey: 'linkstatisticgmf'})}
-                                ${createModule({client, key: 'statisticvirtual', name: 'Návštěvnost Prohlídek', icon: 'route', type: 'stat', linkKey: 'linkstatisticvirtual'})}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
+            const gsvIcons = sectionMap.gsv.keys.map(key => createStatusIcon(client, key, servicesMap[key].name, servicesMap[key].icon)).join('');
+            const gmfIcons = sectionMap.gmf.keys.map(key => createStatusIcon(client, key, servicesMap[key].name, servicesMap[key].icon)).join('');
+            const otherIcons = sectionMap.other.keys.map(key => createStatusIcon(client, key, servicesMap[key].name, servicesMap[key].icon)).join('');
+            const linkIcons = Object.entries(otherLinksMap).map(([key, link]) => createStatusIcon(client, key, link.name, link.icon)).join('');
+
+            return `<div class="bg-white p-4 rounded-xl shadow-sm flex items-center gap-4"><div class="flex-1"><div class="flex items-center gap-2"><h3 class="text-lg font-bold text-slate-900">${client.name}</h3>${client.isNew ? '<span class="text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full">NOVÝ</span>' : ''}</div><p class="text-sm text-slate-500 font-medium">${client.category}</p></div><div class="flex items-center gap-4"><div class="flex items-center gap-3">${gsvIcons}</div><div class="w-px h-6 bg-slate-200"></div><div class="flex items-center gap-3">${gmfIcons}</div><div class="w-px h-6 bg-slate-200"></div><div class="flex items-center gap-3">${otherIcons}</div><div class="w-px h-6 bg-slate-200"></div><div class="flex items-center gap-3">${linkIcons}</div></div></div>`;
         };
         
         const renderClients = () => {
-            if (filteredClients.length > 0) {
-                el.clientsContainer.innerHTML = filteredClients.map(createClientCard).join('');
-                el.emptyState.classList.add('hidden');
-                el.clientsContainer.classList.remove('hidden');
-            } else {
-                el.clientsContainer.classList.add('hidden');
-                el.emptyState.innerHTML = `<div class="inline-block bg-white p-5 rounded-full shadow-sm"><i data-lucide="search-x" class="w-12 h-12 text-slate-400"></i></div><h3 class="mt-6 text-xl font-semibold">Nic nenalezeno</h3><p class="mt-2 text-slate-500">Zkuste upravit filtry.</p>`;
+            try {
+                if (filteredClients.length > 0) {
+                    el.clientsContainer.innerHTML = filteredClients.map(createClientCard).join('');
+                    el.emptyState.classList.add('hidden');
+                    el.clientsContainer.classList.remove('hidden');
+                } else {
+                    el.clientsContainer.classList.add('hidden');
+                    el.emptyState.innerHTML = `<div class="inline-block bg-white p-5 rounded-full shadow-sm"><i data-lucide="search-x" class="w-12 h-12 text-slate-400"></i></div><h3 class="mt-6 text-xl font-semibold">Nic nenalezeno</h3><p class="mt-2 text-slate-500">Zkuste upravit filtry.</p>`;
+                    el.emptyState.classList.remove('hidden');
+                }
+                lucide.createIcons();
+            } catch (error) {
+                console.error("Chyba při vykreslování klientů:", error);
+                el.clientsContainer.innerHTML = '';
+                el.emptyState.innerHTML = `<div class="inline-block bg-red-100 p-5 rounded-full shadow-sm"><i data-lucide="alert-triangle" class="w-12 h-12 text-red-500"></i></div><h3 class="mt-6 text-xl font-semibold">Chyba při zobrazení</h3><p class="mt-2 text-slate-500">Nastala chyba při vykreslování seznamu klientů.</p><p class="mt-1 text-xs text-slate-400">Chyba: ${error.message}</p>`;
                 el.emptyState.classList.remove('hidden');
+                lucide.createIcons();
             }
-            lucide.createIcons();
         };
         
         const resetFilters = () => {
             el.searchQuery.value = '';
             el.categoryFilter.value = 'all';
+            if (el.locationFilter) el.locationFilter.value = '';
             document.querySelectorAll('.service-checkbox:checked').forEach(cb => cb.checked = false);
             applyFilters();
         };
@@ -307,10 +309,15 @@
         const applyFilters = () => {
             const query = el.searchQuery.value.toLowerCase();
             const category = el.categoryFilter.value;
+            const location = el.locationFilter ? el.locationFilter.value.toLowerCase() : '';
             const selectedServices = Array.from(document.querySelectorAll('.service-checkbox:checked')).map(cb => cb.dataset.servicekey);
-            filteredClients = clientsData.filter(c => c.name.toLowerCase().includes(query) && (category === 'all' || c.category === category) && selectedServices.every(sKey => c.activeServices.includes(sKey)));
+            filteredClients = clientsData.filter(c => {
+                 const hasAllServices = selectedServices.every(sKey => c[sKey] && c[sKey].toLowerCase() !== 'false' && c[sKey].trim() !== '');
+                 const locationMatch = !location || (c.address && c.address.toLowerCase().includes(location));
+                 return c.name.toLowerCase().includes(query) && (category === 'all' || c.category === category) && locationMatch && hasAllServices;
+            });
             
-            const count = [query !== '', category !== 'all', selectedServices.length > 0].filter(Boolean).length;
+            const count = [query !== '', category !== 'all', location !== '', selectedServices.length > 0].filter(Boolean).length;
             el.filterCount.textContent = count;
             el.filterCount.classList.toggle('hidden', count === 0);
             el.filterCount.classList.toggle('flex', count > 0);
@@ -320,7 +327,8 @@
 
         const formatNumber = (num) => String(num).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
         
-        const showToast = () => {
+        const showToast = (message) => {
+            el.toastMessage.textContent = message;
             el.toast.classList.remove('opacity-0', 'translate-y-4');
             setTimeout(() => {
                 el.toast.classList.add('opacity-0', 'translate-y-4');
@@ -397,7 +405,7 @@
             
             el.dashboardContent.classList.add('opacity-100');
         };
-
+        
         const setupEventListeners = () => {
             el.navLinks.forEach(b => b.addEventListener('click', () => {
                 el.navLinks.forEach(btn => btn.classList.remove('active'));
@@ -410,41 +418,37 @@
                 const panel = el.filterPanel;
                 if (panel.style.maxHeight && panel.style.maxHeight !== "0px") {
                     panel.style.maxHeight = "0px";
-                    panel.style.paddingTop = "0"; panel.style.paddingBottom = "0"; panel.style.marginBottom = "0";
+                    panel.style.marginBottom = "0px";
                 } else {
                     panel.style.maxHeight = panel.scrollHeight + "px";
-                    panel.style.paddingTop = "1.5rem"; panel.style.paddingBottom = "1.5rem"; panel.style.marginBottom = "2rem";
+                    panel.style.marginBottom = "2rem";
                 }
             });
             el.reloadDataBtn.addEventListener('click', async () => {
                 el.reloadDataBtn.disabled = true;
                 el.reloadDataBtn.querySelector('i').classList.add('animate-spin');
+                localStorage.removeItem('clientsData'); // Clear cache on manual refresh
+                localStorage.removeItem('statsData');
                 await loadAndRenderData(true);
                 el.reloadDataBtn.disabled = false;
                 el.reloadDataBtn.querySelector('i').classList.remove('animate-spin');
-                showToast();
+                showToast('Data byla úspěšně aktualizována!');
             });
             el.resetFiltersBtn.addEventListener('click', resetFilters);
-            [el.searchQuery, el.categoryFilter].forEach(i => i.addEventListener('input', applyFilters));
-            el.servicesFilterContainer.addEventListener('change', (e) => e.target.classList.contains('service-checkbox') && applyFilters());
-        };
 
-        const loadAndRenderData = async (forceRefresh = false) => {
-            if (!forceRefresh) {
-                el.views.clients.classList.add('hidden');
-                el.clientsContainer.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">${Array(6).fill('<div class="bg-white p-5 rounded-2xl shadow-sm animate-pulse"><div class="h-5 bg-slate-200 rounded w-3/4 mb-3"></div><div class="h-4 bg-slate-200 rounded w-1/2 mb-6"></div><div class="h-28 bg-slate-200 rounded-xl"></div></div>').join('')}</div>`;
+            const debouncedFilter = debounce(applyFilters, 300);
+            if(el.locationFilter) {
+                [el.searchQuery, el.locationFilter].forEach(i => i.addEventListener('input', debouncedFilter));
+            } else {
+                el.searchQuery.addEventListener('input', debouncedFilter);
             }
             
-            // Separate fetches for better error handling, not using Promise.all
-            const clientDataResult = await fetchAndParseSheetData(CLIENTS_SHEET_URL, false, forceRefresh);
-            const statsDataResult = await fetchAndParseSheetData(STATS_SHEET_URL, true, forceRefresh);
-
-
+            [el.categoryFilter, el.servicesFilterContainer].forEach(i => i.addEventListener('change', applyFilters));
+        };
+        
+        const processAndRenderAllData = () => {
             el.skeletonLoader.innerHTML = '';
-            
-            if (clientDataResult) {
-                clientsData = clientDataResult;
-                statsData = statsDataResult;
+            if (clientsData && clientsData.length > 0) {
                 filteredClients = clientsData;
                 
                 const filterHTML = Object.entries(servicesMap).map(([key, s]) => `<div class="flex items-center"><input id="${key}" type="checkbox" data-servicekey="${key}" class="service-checkbox h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"><label for="${key}" class="ml-3 text-sm text-slate-600">${s.name}</label></div>`).join('');
@@ -454,8 +458,61 @@
                 
                 setupDashboard();
                 renderClients();
+            } else {
+                el.clientsContainer.innerHTML = '';
+                el.emptyState.innerHTML = `<div class="inline-block bg-white p-5 rounded-full shadow-sm"><i data-lucide="cloud-off" class="w-12 h-12 text-slate-400"></i></div><h3 class="mt-6 text-xl font-semibold">Nebylo možné načíst data</h3><p class="mt-2 text-slate-500">Zkuste prosím obnovit stránku nebo zkontrolovat připojení.</p>`;
+                el.emptyState.classList.remove('hidden');
             }
             lucide.createIcons();
+        };
+
+        const loadAndRenderData = async (forceRefresh = false) => {
+            if (!forceRefresh) {
+                const cachedClients = localStorage.getItem('clientsData');
+                const cachedStats = localStorage.getItem('statsData');
+                if (cachedClients && cachedStats) {
+                    console.log("Načítání z mezipaměti (cache)...");
+                    clientsData = JSON.parse(cachedClients);
+                    statsData = JSON.parse(cachedStats);
+                    processAndRenderAllData();
+                    // Fetch in background for next time
+                    Promise.all([
+                        fetchAndParseSheetData(CLIENTS_SHEET_URL, false, true),
+                        fetchAndParseSheetData(STATS_SHEET_URL, true, true)
+                    ]).then(([clientDataResult, statsDataResult]) => {
+                        if (clientDataResult) {
+                            localStorage.setItem('clientsData', JSON.stringify(clientDataResult));
+                            localStorage.setItem('statsData', JSON.stringify(statsDataResult || {}));
+                        }
+                    });
+                    return;
+                }
+                el.views.clients.classList.add('hidden');
+                el.clientsContainer.innerHTML = `<div class="space-y-3">${Array(8).fill('<div class="bg-white p-4 rounded-xl shadow-sm animate-pulse flex items-center gap-4"><div class="flex-1"><div class="h-5 bg-slate-200 rounded w-1/3 mb-2"></div><div class="h-4 bg-slate-200 rounded w-1/4"></div></div><div class="flex items-center gap-3"><div class="w-6 h-6 bg-slate-200 rounded-full"></div><div class="w-6 h-6 bg-slate-200 rounded-full"></div></div></div>').join('')}</div>`;
+            }
+            
+            try {
+                const [clientDataResult, statsDataResult] = await Promise.all([
+                    fetchAndParseSheetData(CLIENTS_SHEET_URL, false, true),
+                    fetchAndParseSheetData(STATS_SHEET_URL, true, true)
+                ]);
+
+                if (clientDataResult) {
+                    localStorage.setItem('clientsData', JSON.stringify(clientDataResult));
+                    localStorage.setItem('statsData', JSON.stringify(statsDataResult || {}));
+                    clientsData = clientDataResult;
+                    statsData = statsDataResult;
+                    processAndRenderAllData();
+                } else {
+                    throw new Error("Nepodařilo se zpracovat data klientů.");
+                }
+            } catch(error) {
+                console.error("Fatální chyba při načítání:", error);
+                el.clientsContainer.innerHTML = '';
+                el.emptyState.innerHTML = `<div class="inline-block bg-red-100 p-5 rounded-full shadow-sm"><i data-lucide="alert-triangle" class="w-12 h-12 text-red-500"></i></div><h3 class="mt-6 text-xl font-semibold">Něco se pokazilo</h3><p class="mt-2 text-slate-500">Aplikaci se nepodařilo načíst. Zkuste prosím obnovit stránku.</p><p class="mt-1 text-xs text-slate-400">Chyba: ${error.message}</p>`;
+                el.emptyState.classList.remove('hidden');
+                lucide.createIcons();
+            }
         };
 
         // --- INIT ---
